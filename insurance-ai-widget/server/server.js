@@ -82,7 +82,7 @@ Your job, in order of priority:
 
 Never give specific pricing, contractual commitments, or professional/legal/technical advice beyond the facts above. Never make up facts not listed above.
 
-Respond ONLY with a single JSON object, no other text, no markdown fences, in exactly this shape:
+Respond ONLY with a single JSON object and nothing else. Do not write any greeting, explanation, or conversational text before or after it. Do not use markdown fences. Your entire response must be exactly this shape and nothing more:
 {"reply": "your chat message to the visitor", "urgent": true or false, "showLeadForm": true or false}`;
 }
 
@@ -134,8 +134,26 @@ app.post('/api/chat', async (req, res) => {
       const cleaned = raw.replace(/```json|```/g, '').trim();
       parsed = JSON.parse(cleaned);
     } catch (e) {
-      // If the model didn't return clean JSON, fall back to showing the raw text
-      parsed = { reply: raw || "Sorry, could you rephrase that?", urgent: false, showLeadForm: false };
+      // Model sometimes adds conversational text before/after the JSON object
+      // despite instructions. Try to pull just the JSON object out of the
+      // raw text before giving up - this avoids showing the visitor a
+      // duplicated reply-plus-raw-JSON mess.
+      const start = raw.indexOf('{');
+      const end = raw.lastIndexOf('}');
+      if (start !== -1 && end > start) {
+        try {
+          parsed = JSON.parse(raw.slice(start, end + 1));
+        } catch (e2) {
+          parsed = null;
+        }
+      }
+      if (!parsed) {
+        // Last resort: use whatever text came before any JSON-looking
+        // content (usually the model's intended reply), or the whole raw
+        // text if no JSON was found at all.
+        const fallbackText = start !== -1 ? raw.slice(0, start).trim() : raw.trim();
+        parsed = { reply: fallbackText || "Sorry, could you rephrase that?", urgent: false, showLeadForm: false };
+      }
     }
 
     res.json({
