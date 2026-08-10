@@ -34,8 +34,8 @@ NOT committed (it's already in `.gitignore`) — only `.env.example` should be.
    - Start command: `node server.js`
 4. Under **Environment**, add:
    - `ANTHROPIC_API_KEY` = your key from step 1
-   - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM_NAME`
-     (see the Gmail App Password note in `.env.example`)
+   - `SMTP_PASS`, `SMTP_FROM_EMAIL`, `SMTP_FROM_NAME` (this is your Resend
+     API key + sending address, not real SMTP - see `.env.example` for why)
    - `ALLOWED_ORIGINS` = leave blank until you're ready to lock it down,
      then set to a comma-separated list of your clients' website domains
 5. Deploy. Render gives you a URL like `https://ai-front-desk.onrender.com`.

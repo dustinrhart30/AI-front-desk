@@ -7,7 +7,6 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
-const nodemailer = require('nodemailer');
 
 const app = express();
 app.use(express.json({ limit: '100kb' }));
@@ -171,18 +170,45 @@ app.post('/api/chat', async (req, res) => {
 const LEADS_DIR = path.join(__dirname, 'leads');
 if (!fs.existsSync(LEADS_DIR)) fs.mkdirSync(LEADS_DIR);
 
-let transporter = null;
-if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
-  const smtpPort = Number(process.env.SMTP_PORT || 587);
-  transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: smtpPort,
-    secure: smtpPort === 465, // true = implicit TLS (port 465), false = STARTTLS (port 587)
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-  });
-  console.log(`SMTP configured: ${process.env.SMTP_HOST}:${smtpPort} as ${process.env.SMTP_USER}`);
+// Email is sent via Resend's HTTP API, not SMTP. Render's free tier (and many
+// other hosts) blocks outbound SMTP ports entirely, which is invisible until
+// you actually try to send - the HTTP API travels over normal HTTPS instead,
+// so it isn't affected. Reuses the same SMTP_PASS/SMTP_FROM_EMAIL/SMTP_FROM_NAME
+// env vars that were already set up for SMTP - SMTP_PASS is your Resend API
+// key either way, so no Render changes are needed to pick this up.
+const RESEND_API_KEY = process.env.SMTP_PASS;
+const EMAIL_FROM = process.env.SMTP_FROM_EMAIL;
+const EMAIL_FROM_NAME = process.env.SMTP_FROM_NAME || 'AI Front Desk';
+
+if (RESEND_API_KEY && EMAIL_FROM) {
+  console.log(`Email sending configured via Resend API, from ${EMAIL_FROM}`);
 } else {
-  console.log('SMTP NOT configured - missing SMTP_HOST, SMTP_USER, or SMTP_PASS. Leads will save to disk only, no email will be sent.');
+  console.log('Email sending NOT configured - missing SMTP_PASS (Resend API key) or SMTP_FROM_EMAIL. Leads will save to disk only, no email will be sent.');
+}
+
+async function sendLeadEmail(config, lead) {
+  const subject = lead.urgent
+    ? `⚠️ URGENT lead from your website: ${lead.name}`
+    : `New website lead: ${lead.name}`;
+
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${RESEND_API_KEY}`,
+    },
+    body: JSON.stringify({
+      from: `${EMAIL_FROM_NAME} <${EMAIL_FROM}>`,
+      to: config.notifyEmail,
+      subject,
+      text: `New lead from the ${config.businessName} website chat assistant.\n\nName: ${lead.name}\nPhone: ${lead.phone}\nEmail: ${lead.email}\nNotes: ${lead.notes}\nUrgent: ${lead.urgent ? 'YES' : 'No'}\nTime: ${lead.timestamp}`,
+    }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Resend API error: ${response.status} ${errText}`);
+  }
 }
 
 app.post('/api/lead', async (req, res) => {
@@ -207,20 +233,11 @@ app.post('/api/lead', async (req, res) => {
     const leadFile = path.join(LEADS_DIR, `${agencyId}.jsonl`);
     fs.appendFileSync(leadFile, JSON.stringify(lead) + '\n');
 
-    if (transporter && config.notifyEmail) {
-      const subject = lead.urgent
-        ? `⚠️ URGENT lead from your website: ${lead.name}`
-        : `New website lead: ${lead.name}`;
-
-      await transporter.sendMail({
-        from: `"${process.env.SMTP_FROM_NAME || 'AI Front Desk'}" <${process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER}>`,
-        to: config.notifyEmail,
-        subject,
-        text: `New lead from the ${config.businessName} website chat assistant.\n\nName: ${lead.name}\nPhone: ${lead.phone}\nEmail: ${lead.email}\nNotes: ${lead.notes}\nUrgent: ${lead.urgent ? 'YES' : 'No'}\nTime: ${lead.timestamp}`,
-      });
+    if (RESEND_API_KEY && EMAIL_FROM && config.notifyEmail) {
+      await sendLeadEmail(config, lead);
       console.log(`Lead email sent to ${config.notifyEmail} for ${agencyId}`);
     } else {
-      console.log(`Lead email SKIPPED for ${agencyId} - transporter configured: ${Boolean(transporter)}, notifyEmail set: ${Boolean(config.notifyEmail)}`);
+      console.log(`Lead email SKIPPED for ${agencyId} - email configured: ${Boolean(RESEND_API_KEY && EMAIL_FROM)}, notifyEmail set: ${Boolean(config.notifyEmail)}`);
     }
 
     res.json({ ok: true });
