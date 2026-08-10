@@ -162,6 +162,9 @@ if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
     secure: smtpPort === 465, // true = implicit TLS (port 465), false = STARTTLS (port 587)
     auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
   });
+  console.log(`SMTP configured: ${process.env.SMTP_HOST}:${smtpPort} as ${process.env.SMTP_USER}`);
+} else {
+  console.log('SMTP NOT configured - missing SMTP_HOST, SMTP_USER, or SMTP_PASS. Leads will save to disk only, no email will be sent.');
 }
 
 app.post('/api/lead', async (req, res) => {
@@ -197,6 +200,9 @@ app.post('/api/lead', async (req, res) => {
         subject,
         text: `New lead from the ${config.businessName} website chat assistant.\n\nName: ${lead.name}\nPhone: ${lead.phone}\nEmail: ${lead.email}\nNotes: ${lead.notes}\nUrgent: ${lead.urgent ? 'YES' : 'No'}\nTime: ${lead.timestamp}`,
       });
+      console.log(`Lead email sent to ${config.notifyEmail} for ${agencyId}`);
+    } else {
+      console.log(`Lead email SKIPPED for ${agencyId} - transporter configured: ${Boolean(transporter)}, notifyEmail set: ${Boolean(config.notifyEmail)}`);
     }
 
     res.json({ ok: true });
