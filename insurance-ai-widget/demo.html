@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Laurel Highlands Insurance Group | Greensburg, PA</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --navy:#1B3A4B;
+    --navy-dark:#122733;
+    --gold:#C89B3C;
+    --cream:#F7F5F1;
+    --ink:#2B2B2B;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:'Inter',sans-serif;color:var(--ink);background:var(--cream);}
+  h1,h2,h3{font-family:'Fraunces',serif;margin:0;}
+  header{background:var(--navy);color:#fff;padding:18px 6vw;display:flex;align-items:center;justify-content:space-between;}
+  .brand{font-family:'Fraunces',serif;font-weight:700;font-size:20px;letter-spacing:.2px;}
+  nav a{color:#fff;opacity:.85;text-decoration:none;margin-left:28px;font-size:14px;}
+  .hero{background:var(--navy);color:#fff;padding:70px 6vw 90px;position:relative;overflow:hidden;}
+  .hero::after{content:"";position:absolute;right:-60px;bottom:-120px;width:320px;height:320px;border-radius:50%;background:radial-gradient(circle, rgba(200,155,60,.35), transparent 70%);}
+  .hero h1{font-size:clamp(32px,4.5vw,52px);font-weight:700;max-width:640px;line-height:1.1;}
+  .hero p{max-width:480px;font-size:17px;opacity:.85;margin-top:18px;line-height:1.6;}
+  .eyebrow{color:var(--gold);font-weight:600;letter-spacing:1.5px;text-transform:uppercase;font-size:12.5px;}
+  .cta{display:inline-block;margin-top:26px;background:var(--gold);color:var(--navy-dark);font-weight:700;padding:13px 26px;border-radius:8px;text-decoration:none;font-size:14.5px;}
+  section{padding:60px 6vw;}
+  .lines{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:18px;max-width:960px;}
+  .line-card{background:#fff;border:1px solid #e9e4d8;border-radius:12px;padding:22px;}
+  .line-card h3{font-size:18px;color:var(--navy);margin-bottom:6px;}
+  .line-card p{font-size:13.5px;color:#555;margin:0;line-height:1.5;}
+  .band{background:var(--navy-dark);color:#fff;text-align:center;padding:50px 6vw;}
+  .band h2{font-size:26px;margin-bottom:10px;}
+  .band p{opacity:.8;font-size:14.5px;}
+  footer{padding:26px 6vw;font-size:12.5px;color:#8a8a8a;text-align:center;border-top:1px solid #e9e4d8;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">Laurel Highlands Insurance Group</div>
+  <nav>
+    <a href="#">Coverage</a>
+    <a href="#">About</a>
+    <a href="#">Contact</a>
+  </nav>
+</header>
+
+<div class="hero">
+  <div class="eyebrow">Greensburg, PA &middot; Est. 1987</div>
+  <h1>Straight answers on insurance, from people who live here too.</h1>
+  <p>Auto, home, business, and life coverage for Westmoreland County families &mdash; with an actual person on the other end of the phone.</p>
+  <a class="cta" href="tel:7245550134">Call (724) 555-0134</a>
+</div>
+
+<section>
+  <div class="eyebrow" style="color:var(--navy);">What we cover</div>
+  <h2 style="margin:8px 0 26px;font-size:26px;color:var(--navy);">Coverage lines</h2>
+  <div class="lines">
+    <div class="line-card"><h3>Auto</h3><p>Liability, collision, and comprehensive plans built around how you actually drive.</p></div>
+    <div class="line-card"><h3>Home</h3><p>Protection for the place you've built, from storm damage to liability.</p></div>
+    <div class="line-card"><h3>Renters</h3><p>Affordable coverage for your belongings, wherever you're renting.</p></div>
+    <div class="line-card"><h3>Life</h3><p>Term and whole life plans that fit your family's stage of life.</p></div>
+    <div class="line-card"><h3>Business</h3><p>Commercial coverage for shops, contractors, and local operators.</p></div>
+    <div class="line-card"><h3>Umbrella</h3><p>Extra protection layered on top of your existing policies.</p></div>
+  </div>
+</section>
+
+<div class="band">
+  <h2>Have a question right now?</h2>
+  <p>Use the chat in the corner &mdash; it's there any time, day or night.</p>
+</div>
+
+<footer>
+  123 Main St, Greensburg, PA 15601 &middot; Mon&ndash;Fri 9am&ndash;5pm ET &middot; This is a demo site for sales purposes.
+</footer>
+
+<!-- AI Front Desk widget embed - this is the entire integration a client's site needs.
+     No data-api set here on purpose: since this demo page is served BY the same
+     server as the API (see server.js "/demo" route), the widget auto-detects it.
+     On a real client's website, always set data-api explicitly - see docs/CLIENT-ONBOARDING.md -->
+<script
+  src="/widget/widget.js"
+  data-agency="demo-agency">
+</script>
+
+</body>
+</html>
