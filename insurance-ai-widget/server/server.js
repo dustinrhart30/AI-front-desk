@@ -155,10 +155,11 @@ if (!fs.existsSync(LEADS_DIR)) fs.mkdirSync(LEADS_DIR);
 
 let transporter = null;
 if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+  const smtpPort = Number(process.env.SMTP_PORT || 587);
   transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT || 587),
-    secure: false,
+    port: smtpPort,
+    secure: smtpPort === 465, // true = implicit TLS (port 465), false = STARTTLS (port 587)
     auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
   });
 }
@@ -191,7 +192,7 @@ app.post('/api/lead', async (req, res) => {
         : `New website lead: ${lead.name}`;
 
       await transporter.sendMail({
-        from: `"${process.env.SMTP_FROM_NAME || 'AI Front Desk'}" <${process.env.SMTP_USER}>`,
+        from: `"${process.env.SMTP_FROM_NAME || 'AI Front Desk'}" <${process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER}>`,
         to: config.notifyEmail,
         subject,
         text: `New lead from the ${config.businessName} website chat assistant.\n\nName: ${lead.name}\nPhone: ${lead.phone}\nEmail: ${lead.email}\nNotes: ${lead.notes}\nUrgent: ${lead.urgent ? 'YES' : 'No'}\nTime: ${lead.timestamp}`,
