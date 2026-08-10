@@ -1,8 +1,11 @@
 # AI Front Desk
 
-A chat widget insurance agencies embed on their website. It answers coverage
-questions after-hours, flags real emergencies for an immediate phone call,
-and captures leads straight to the agent's inbox.
+A chat widget local businesses embed on their website. It answers questions
+about their services after-hours, flags real emergencies for an immediate
+phone call, and captures leads straight to the owner's inbox. Originally
+built for insurance agencies, the config schema is business-agnostic —
+`server/config/koveralink.json` is a working non-insurance example (an IT/AI
+consulting firm).
 
 ## How it's built
 
@@ -33,13 +36,16 @@ node server.js
 ```
 
 Then open `demo.html` in a browser (with the server running on port 3000)
-to see the widget live on a mock insurance agency site.
+to see the widget live on the mock insurance agency demo site (the classic
+example, kept for sales walk-ins). To see the KoveraLink version instead,
+change `demo.html`'s `data-agency` to `koveralink`, or just visit `/demo`
+with that agency's own real site once it's embedded there.
 
 ## How a chat turn works
 
 1. Widget sends the visitor's message + short history to `POST /api/chat`.
 2. Server builds a system prompt from that agency's `config/*.json` (name,
-   hours, coverage lines, phone, tone) and calls Claude (Haiku — cheap and
+   hours, services, phone, tone) and calls Claude (Haiku — cheap and
    fast, ideal for this).
 3. Claude replies with structured JSON: the chat reply, whether this is an
    urgent/emergency message, and whether to show the lead-capture form.

@@ -1,0 +1,16 @@
+{
+  "agencyId": "koveralink",
+  "businessName": "KoveraLink",
+  "industry": "an AI-first managed IT and automation partner based in Greensburg, PA",
+  "greeting": "Hi! I'm KoveraLink's assistant. Ask me about AI & Automation, Managed IT, Cybersecurity, or Website & Workflow Design \u2014 or I can get you set up with a free discovery call.",
+  "tagline": "Intelligent Technology. Connected Business.",
+  "phone": "(724) 374-3223",
+  "notifyEmail": "info@koveralink.com",
+  "address": "1811 S Broad St Ext., Greensburg, PA 15601",
+  "hours": "Monday-Friday, 9am-5pm ET \u2014 the assistant covers questions outside those hours",
+  "services": ["AI & Automation", "AI Advisory Services (vCIO)", "Website & Workflow Design", "Managed IT", "Cybersecurity"],
+  "tone": "professional, consultative, benefits-focused, no fluff, keep replies to 2-3 sentences",
+  "primaryColor": "#14283D",
+  "accentColor": "#2F8F87",
+  "urgentDescription": "an active security breach, ransomware, being hacked, or a complete systems/website outage happening right now"
+}

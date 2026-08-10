@@ -56,7 +56,7 @@ app.get('/api/agency-config', (req, res) => {
   if (!config) return res.status(404).json({ error: 'Unknown agency' });
 
   res.json({
-    agencyName: config.agencyName,
+    businessName: config.businessName,
     greeting: config.greeting,
     phone: config.phone,
     primaryColor: config.primaryColor,
@@ -66,21 +66,21 @@ app.get('/api/agency-config', (req, res) => {
 
 // --- Chat endpoint ---
 function buildSystemPrompt(config) {
-  return `You are the front-desk chat assistant embedded on the website of ${config.agencyName}, an insurance agency in Greensburg, PA.
+  return `You are the front-desk chat assistant embedded on the website of ${config.businessName}, ${config.industry} based in ${config.address}.
 
-Agency facts (only use these, never invent coverage details, prices, or legal advice):
-- Coverage lines offered: ${config.coverageLines.join(', ')}
+Business facts (only use these, never invent services, prices, or commitments):
+- Services offered: ${config.services.join(', ')}
 - Hours: ${config.hours}
 - Phone: ${config.phone}
 - Address: ${config.address}
 - Tone: ${config.tone}
 
 Your job, in order of priority:
-1. If the visitor describes anything that sounds like an active emergency or in-progress claim (a wreck, injury, fire, flood, break-in, etc.), respond with urgency, tell them to call ${config.phone} right now, and set "urgent" to true.
-2. Answer general questions about coverage types, hours, and location using only the facts above. If you don't know something specific (exact pricing, policy details, claims status), say a licensed agent will follow up rather than guessing.
-3. If the visitor seems interested in a quote or callback, warmly ask if you can get their name and best phone number so an agent can reach out, then set "showLeadForm" to true once they've agreed.
+1. If the visitor describes anything matching this business's definition of urgent — ${config.urgentDescription} — respond with urgency, tell them to call ${config.phone} right now, and set "urgent" to true.
+2. Answer general questions about services, hours, and location using only the facts above. If you don't know something specific (exact pricing, contract terms, project scope), say a team member will follow up rather than guessing.
+3. If the visitor seems interested in talking further, warmly ask if you can get their name and best phone number so someone can reach out, then set "showLeadForm" to true once they've agreed.
 
-Never give specific insurance advice, quotes, or legal opinions. Never make up facts not listed above.
+Never give specific pricing, contractual commitments, or professional/legal/technical advice beyond the facts above. Never make up facts not listed above.
 
 Respond ONLY with a single JSON object, no other text, no markdown fences, in exactly this shape:
 {"reply": "your chat message to the visitor", "urgent": true or false, "showLeadForm": true or false}`;
@@ -194,7 +194,7 @@ app.post('/api/lead', async (req, res) => {
         from: `"${process.env.SMTP_FROM_NAME || 'AI Front Desk'}" <${process.env.SMTP_USER}>`,
         to: config.notifyEmail,
         subject,
-        text: `New lead from the ${config.agencyName} website chat assistant.\n\nName: ${lead.name}\nPhone: ${lead.phone}\nEmail: ${lead.email}\nNotes: ${lead.notes}\nUrgent: ${lead.urgent ? 'YES' : 'No'}\nTime: ${lead.timestamp}`,
+        text: `New lead from the ${config.businessName} website chat assistant.\n\nName: ${lead.name}\nPhone: ${lead.phone}\nEmail: ${lead.email}\nNotes: ${lead.notes}\nUrgent: ${lead.urgent ? 'YES' : 'No'}\nTime: ${lead.timestamp}`,
       });
     }
 

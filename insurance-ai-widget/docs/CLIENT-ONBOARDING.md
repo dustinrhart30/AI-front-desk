@@ -1,22 +1,30 @@
 # Onboarding a New Client
 
-Repeat this for every agency you sign. Takes about 20-30 minutes end to end.
+Repeat this for every business you sign — insurance agency, law firm, or
+any other local business. Takes about 20-30 minutes end to end.
 
 ## 1. Create their config file
 
-Copy `server/config/demo-agency.json` to `server/config/{their-id}.json`
-(use a short lowercase-hyphen id, e.g. `smith-insurance`). Fill in:
+Copy `server/config/demo-agency.json` (or `koveralink.json` for a
+non-insurance example) to `server/config/{their-id}.json` (use a short
+lowercase-hyphen id, e.g. `smith-insurance`). Fill in:
 
 - `agencyId` — must match the filename
-- `agencyName`, `greeting`, `tagline`
+- `businessName`, `greeting`, `tagline`
+- `industry` — a short phrase describing what kind of business this is
+  (e.g. "an independent insurance agency in Greensburg, PA" or "a family
+  law practice serving Westmoreland County") — this frames the assistant's
+  system prompt, so be specific
 - `phone`, `address`, `hours`
-- `coverageLines` — ask them which lines to highlight
-- `notifyEmail` — where leads should land (often the owner's inbox, or a
-  shared inbox you set up for this)
+- `services` — ask them which offerings to highlight; this replaces the
+  old insurance-only `coverageLines` field
+- `notifyEmail` — where leads should land
 - `primaryColor`, `accentColor` — grab two hex codes from their existing
   site/logo so the widget matches their brand instead of looking bolted-on
-- `urgentKeywords` — the defaults cover most cases; ask if they want
-  anything industry-specific added
+- `urgentDescription` — a plain-English sentence describing what counts as
+  urgent for THIS business (an accident for an insurance agency, a security
+  breach for an IT company, a break-in for a locksmith, etc.) — this is
+  what the model actually watches for, so make it concrete
 
 ## 2. Deploy the config
 
@@ -35,17 +43,24 @@ automatically. No code changes needed.
 
 ## 4. Install it on their site
 
-Ask for temporary admin access to their website (WordPress/Squarespace),
-or a screen-share to walk them through pasting it themselves. Paste the
-snippet in the site's footer/custom-code section, save, and load the site
-to confirm the chat bubble appears bottom-right.
+How you install it depends on how their site is built:
+
+- **WordPress/Squarespace** — ask for temporary admin access, or a
+  screen-share to walk them through it. Paste the snippet into the site's
+  footer/custom-code section, save.
+- **Git-based site (Netlify/Vercel/etc., like koveralink.com itself)** —
+  add the script tag directly into the site's HTML source (just before
+  `</body>` in the relevant template/page), commit, and push. The host's
+  git integration redeploys automatically.
+
+Load the site afterward to confirm the chat bubble appears bottom-right.
 
 ## 5. Test it live
 
-- Ask a normal coverage question — confirm the reply sounds right and uses
-  only real facts about their agency.
-- Trigger the urgent path ("I was just in an accident") — confirm it shows
-  their phone number prominently.
+- Ask a normal question about their services — confirm the reply sounds
+  right and uses only real facts about their business.
+- Trigger the urgent path using whatever you set in `urgentDescription` —
+  confirm it shows their phone number prominently.
 - Go through the lead form — confirm the email lands in their inbox within
   a minute or two.
 
@@ -59,5 +74,5 @@ client websites can call your API.
 
 Short email: what it does, where leads will show up, and that you'll check
 in after the first week to review real conversations and tune the config
-(coverage details, tone, anything it got wrong). This check-in is also a
-natural moment to mention referrals to other local businesses.
+(services, tone, anything it got wrong). This check-in is also a natural
+moment to mention referrals to other local businesses.

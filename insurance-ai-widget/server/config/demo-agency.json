@@ -1,15 +1,16 @@
 {
   "agencyId": "demo-agency",
-  "agencyName": "Laurel Highlands Insurance Group",
+  "businessName": "Laurel Highlands Insurance Group",
+  "industry": "an independent insurance agency in Greensburg, PA",
   "greeting": "Hi! I'm the virtual assistant for Laurel Highlands Insurance. Ask me about auto, home, or business coverage, or I can get you set up with a quote callback.",
   "tagline": "Protecting Westmoreland County families since 1987",
   "phone": "(724) 555-0134",
   "notifyEmail": "agent@example.com",
   "address": "123 Main St, Greensburg, PA 15601",
   "hours": "Monday-Friday, 9am-5pm ET",
-  "coverageLines": ["Auto", "Home", "Renters", "Life", "Business/Commercial", "Umbrella"],
+  "services": ["Auto insurance", "Home insurance", "Renters insurance", "Life insurance", "Business/Commercial insurance", "Umbrella policies"],
   "tone": "warm, plain-spoken, small-town, no insurance jargon, keep replies to 2-3 sentences",
   "primaryColor": "#1B3A4B",
   "accentColor": "#C89B3C",
-  "urgentKeywords": ["accident", "crash", "injured", "injury", "fire", "flood", "just totaled", "hit and run", "emergency claim"]
+  "urgentDescription": "an active accident, injury, fire, flood, break-in, or in-progress emergency claim"
 }

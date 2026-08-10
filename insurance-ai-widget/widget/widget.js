@@ -91,7 +91,7 @@
     '<textarea class="aifd-input" rows="1" placeholder="Type a message..." data-role="input"></textarea>' +
     '<button class="aifd-send" data-role="send">Send</button>' +
     '</div>' +
-    '<div class="aifd-footer">AI assistant &middot; not a licensed agent</div>';
+    '<div class="aifd-footer">AI assistant &middot; for general info</div>';
 
   root.appendChild(launcher);
   root.appendChild(panel);
@@ -161,7 +161,7 @@
       .then(function (r) { return r.json(); })
       .then(function (cfg) {
         state.config = cfg;
-        titleEl.textContent = cfg.agencyName || 'Chat with us';
+        titleEl.textContent = cfg.businessName || 'Chat with us';
         if (cfg.primaryColor) root.style.setProperty('--aifd-primary', cfg.primaryColor);
         if (cfg.accentColor) root.style.setProperty('--aifd-accent', cfg.accentColor);
         addMessage('bot', cfg.greeting || 'Hi! How can I help?');
