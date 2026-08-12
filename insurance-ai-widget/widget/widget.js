@@ -133,6 +133,7 @@
     wrap.innerHTML =
       '<label>Name</label><input type="text" data-field="name" />' +
       '<label>Best phone number</label><input type="tel" data-field="phone" />' +
+      '<label>Email (optional)</label><input type="email" data-field="email" />' +
       '<button type="button">Request a callback</button>';
     messagesEl.appendChild(wrap);
     messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -140,17 +141,18 @@
     wrap.querySelector('button').addEventListener('click', function () {
       var name = wrap.querySelector('[data-field="name"]').value.trim();
       var phone = wrap.querySelector('[data-field="phone"]').value.trim();
+      var email = wrap.querySelector('[data-field="email"]').value.trim();
       if (!name || !phone) return;
-      submitLead(name, phone);
+      submitLead(name, phone, email);
       wrap.remove();
     });
   }
 
-  function submitLead(name, phone) {
+  function submitLead(name, phone, email) {
     fetch(apiBase + '/api/lead', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ agencyId: agencyId, name: name, phone: phone }),
+      body: JSON.stringify({ agencyId: agencyId, name: name, phone: phone, email: email || '' }),
     }).catch(function () {});
     addMessage('bot', "Thanks, " + name + "! Someone will call you at " + phone + " soon.");
   }
