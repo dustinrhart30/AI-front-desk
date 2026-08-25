@@ -29,6 +29,10 @@
     history: [], // {role, content}
     showLeadForm: false,
     config: null,
+    // Sticky once set. If the visitor opens with "I just got rear-ended" and
+    // only hands over their number three turns later, the lead is still
+    // urgent - so this latches true and never clears for the session.
+    urgent: false,
   };
 
   // ---------- Styles ----------
@@ -152,7 +156,13 @@
     fetch(apiBase + '/api/lead', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ agencyId: agencyId, name: name, phone: phone, email: email || '' }),
+      body: JSON.stringify({
+        agencyId: agencyId,
+        name: name,
+        phone: phone,
+        email: email || '',
+        urgent: state.urgent,
+      }),
     }).catch(function () {});
     addMessage('bot', "Thanks, " + name + "! Someone will call you at " + phone + " soon.");
   }
@@ -191,6 +201,7 @@
         hideTyping();
         addMessage('bot', data.reply, data.urgent);
         state.history.push({ role: 'assistant', content: data.reply });
+        if (data.urgent) state.urgent = true;
         if (data.urgent && state.config && state.config.phone) {
           addMessage('bot', 'Please call us right now at ' + state.config.phone + '.');
         }
