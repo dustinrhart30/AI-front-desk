@@ -80,7 +80,16 @@ const OUTPUT_CONTRACT_WITH_LEAD =
   `Respond ONLY with a single JSON object and nothing else. Do not write any greeting, explanation, or conversational text before or after it. Do not use markdown fences. Your entire response must be exactly this shape and nothing more:
 {"reply": "your chat message to the visitor", "urgent": true or false, "showLeadForm": false, "lead": {"name": null, "phone": null, "email": null, "reason": null}}
 
-Carry every lead value you have already learned forward into every later response - the fields are re-read each turn, so dropping one loses it. Leave a field null until the visitor actually gives it. Never put a Social Security number, date of birth, policy number, driver's license number, or payment detail into any field, even if the visitor typed one.`;
+Carry every lead value you have already learned forward into every later response - the fields are re-read each turn, so dropping one loses it. Leave a field null until the visitor actually gives it. Never put a Social Security number, date of birth, policy number, driver's license number, or payment detail into any field, even if the visitor typed one.
+
+Before you send the reply, look at the lead object you just filled in and check it against the last sentence of your reply:
+
+- lead.name is null, and this is NOT urgent -> your reply MUST end by asking for their name. Not "what's your situation", not "are you looking for a quote", not "what can I help you with". Their name.
+- lead.phone is null, and this IS urgent -> your reply MUST end by asking for their number.
+- lead.name is filled but lead.phone is null -> your reply MUST end by asking for their number, using their name.
+- both filled -> ask whatever is genuinely useful.
+
+This check is not optional and it is not a stylistic preference. A conversation that ends without a name and a number produced nothing, no matter how helpful it was.`;
 
 // --- Per-agency prompt override -------------------------------------------
 // A config may set "systemPromptFile" (a filename next to the configs). That
