@@ -152,6 +152,16 @@
     });
   }
 
+  // The visitor's opening line is, in practice, why they came - "I just got
+  // rear-ended", "do you write commercial auto". Better to derive the reason
+  // from what they already said than to add another box to the form.
+  function reasonForContact() {
+    for (var i = 0; i < state.history.length; i++) {
+      if (state.history[i].role === 'user') return state.history[i].content;
+    }
+    return '';
+  }
+
   function submitLead(name, phone, email) {
     fetch(apiBase + '/api/lead', {
       method: 'POST',
@@ -162,6 +172,11 @@
         phone: phone,
         email: email || '',
         urgent: state.urgent,
+        notes: reasonForContact(),
+        // Capped to match the server's own limit. The server rejects bodies
+        // over 100kb and submitLead swallows errors, so an unbounded history
+        // would mean a long conversation silently loses the whole lead.
+        transcript: state.history.slice(-60),
       }),
     }).catch(function () {});
     addMessage('bot', "Thanks, " + name + "! Someone will call you at " + phone + " soon.");

@@ -186,6 +186,42 @@ if (RESEND_API_KEY && EMAIL_FROM) {
   console.log('Email sending NOT configured - missing SMTP_PASS (Resend API key) or SMTP_FROM_EMAIL. Leads will save to disk only, no email will be sent.');
 }
 
+// --- Transcript handling ---------------------------------------------------
+// The agent needs the whole conversation, not just the four form fields -
+// what the visitor actually asked is usually more useful than their name.
+
+const MAX_TRANSCRIPT_TURNS = 60;
+const MAX_TURN_CHARS = 2000;
+
+// The assistant is instructed never to collect an SSN or card number, but it
+// can't stop a visitor from typing one anyway - and the transcript would then
+// carry it into a plaintext email. Two narrow patterns only: SSN-with-dashes
+// and 13-19 digit card runs. A 10-digit phone number can't match either.
+// Delete this and its two call sites if you'd rather have verbatim copy.
+function redactSensitive(text) {
+  return String(text)
+    .replace(/\b\d{3}-\d{2}-\d{4}\b/g, '[redacted]')
+    .replace(/\b\d(?:[ -]?\d){12,18}\b/g, '[redacted]');
+}
+
+function normalizeTranscript(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((t) => t && typeof t.content === 'string' && t.content.trim())
+    .slice(-MAX_TRANSCRIPT_TURNS)
+    .map((t) => ({
+      role: t.role === 'assistant' ? 'assistant' : 'visitor',
+      content: redactSensitive(t.content).slice(0, MAX_TURN_CHARS),
+    }));
+}
+
+function renderTranscript(turns) {
+  if (!turns.length) return '(no transcript captured)';
+  return turns
+    .map((t) => `${t.role === 'assistant' ? 'Assistant' : 'Visitor'}: ${t.content}`)
+    .join('\n\n');
+}
+
 async function sendLeadEmail(config, lead) {
   const subject = lead.urgent
     ? `⚠️ URGENT lead from your website: ${lead.name}`
@@ -201,7 +237,20 @@ async function sendLeadEmail(config, lead) {
       from: `${EMAIL_FROM_NAME} <${EMAIL_FROM}>`,
       to: config.notifyEmail,
       subject,
-      text: `New lead from the ${config.businessName} website chat assistant.\n\nName: ${lead.name}\nPhone: ${lead.phone}\nEmail: ${lead.email}\nNotes: ${lead.notes}\nUrgent: ${lead.urgent ? 'YES' : 'No'}\nTime: ${lead.timestamp}`,
+      text: [
+        `New lead from the ${config.businessName} website chat assistant.`,
+        ``,
+        `Name: ${lead.name}`,
+        `Phone: ${lead.phone}`,
+        `Email: ${lead.email || '(not given)'}`,
+        `Reason for contact: ${lead.notes || '(not given)'}`,
+        `Urgent: ${lead.urgent ? 'YES' : 'No'}`,
+        `Time: ${lead.timestamp}`,
+        ``,
+        `--- Full transcript ---`,
+        ``,
+        renderTranscript(lead.transcript || []),
+      ].join('\n'),
     }),
   });
 
@@ -213,7 +262,7 @@ async function sendLeadEmail(config, lead) {
 
 app.post('/api/lead', async (req, res) => {
   try {
-    const { agencyId, name, phone, email, notes, urgent } = req.body || {};
+    const { agencyId, name, phone, email, notes, urgent, transcript } = req.body || {};
     const config = loadAgencyConfig(agencyId);
     if (!config) return res.status(404).json({ error: 'Unknown agency' });
     if (!name || !phone) {
@@ -225,8 +274,9 @@ app.post('/api/lead', async (req, res) => {
       name,
       phone,
       email: email || '',
-      notes: notes || '',
+      notes: redactSensitive(notes || ''),
       urgent: Boolean(urgent),
+      transcript: normalizeTranscript(transcript),
     };
 
     // Always save locally first, so nothing is lost even if email fails
