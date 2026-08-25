@@ -64,7 +64,88 @@ app.get('/api/agency-config', (req, res) => {
 });
 
 // --- Chat endpoint ---
+
+// The tail that makes the response machine-readable. NOT agency-configurable:
+// the parser below depends on it, so it is always appended by the server, never
+// supplied by a config file.
+const OUTPUT_CONTRACT_BASIC =
+  `Respond ONLY with a single JSON object and nothing else. Do not write any greeting, explanation, or conversational text before or after it. Do not use markdown fences. Your entire response must be exactly this shape and nothing more:
+{"reply": "your chat message to the visitor", "urgent": true or false, "showLeadForm": true or false}`;
+
+// Used only by agencies with a prompt override. Adds the lead object, which is
+// how an agency captures contact details in conversation instead of by
+// rendering a form. Agencies without an override never see this and behave
+// exactly as before.
+const OUTPUT_CONTRACT_WITH_LEAD =
+  `Respond ONLY with a single JSON object and nothing else. Do not write any greeting, explanation, or conversational text before or after it. Do not use markdown fences. Your entire response must be exactly this shape and nothing more:
+{"reply": "your chat message to the visitor", "urgent": true or false, "showLeadForm": false, "lead": {"name": null, "phone": null, "email": null, "reason": null}}
+
+Carry every lead value you have already learned forward into every later response - the fields are re-read each turn, so dropping one loses it. Leave a field null until the visitor actually gives it. Never put a Social Security number, date of birth, policy number, driver's license number, or payment detail into any field, even if the visitor typed one.`;
+
+// --- Per-agency prompt override -------------------------------------------
+// A config may set "systemPromptFile" (a filename next to the configs). That
+// file replaces the default prompt body for that agency only. This is what
+// keeps one backend serving every client: a client who needs different rules
+// is still a new file, not a new codebase - and crucially, not an edit to the
+// shared template that every other agency is running on.
+
+const PROMPT_DIR = CONFIG_DIR;
+const promptCache = new Map();
+
+function loadPromptFile(filename) {
+  if (!/^[a-z0-9._-]+$/i.test(filename || '')) return null;
+  if (promptCache.has(filename)) return promptCache.get(filename);
+
+  const filePath = path.join(PROMPT_DIR, filename);
+  if (!fs.existsSync(filePath)) {
+    console.warn(`Prompt file ${filename} not found - falling back to the default prompt.`);
+    return null;
+  }
+  const text = fs.readFileSync(filePath, 'utf8');
+  promptCache.set(filename, text);
+  return text;
+}
+
+// Current date and time in the agency's own timezone, so the assistant can
+// tell whether it is open right now and name the next opening. Without this
+// the model has hours as a string and no idea what time it is.
+function currentTimeFor(config) {
+  const timeZone = config.timezone || 'America/New_York';
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
+      hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
+    }).format(new Date());
+  } catch (e) {
+    console.warn(`Invalid timezone "${timeZone}" - falling back to UTC.`);
+    return new Date().toUTCString();
+  }
+}
+
+// {{key}} is replaced by that key from the config, so a prompt file never
+// hardcodes a phone number or a set of hours that the config also defines.
+function fillPlaceholders(template, config) {
+  return template.replace(/\{\{(\w+)\}\}/g, (whole, key) => {
+    if (key === 'now') return currentTimeFor(config);
+    const value = config[key];
+    if (Array.isArray(value)) return value.join(', ');
+    if (value === undefined || value === null) return whole;
+    return String(value);
+  });
+}
+
 function buildSystemPrompt(config) {
+  if (config.systemPromptFile) {
+    const template = loadPromptFile(config.systemPromptFile);
+    if (template) {
+      return `${fillPlaceholders(template, config).trim()}\n\n${OUTPUT_CONTRACT_WITH_LEAD}`;
+    }
+  }
+  return buildDefaultSystemPrompt(config);
+}
+
+function buildDefaultSystemPrompt(config) {
   return `You are the front-desk chat assistant embedded on the website of ${config.businessName}, ${config.industry} based in ${config.address}.
 
 Business facts (only use these, never invent services, prices, or commitments):
@@ -81,8 +162,24 @@ Your job, in order of priority:
 
 Never give specific pricing, contractual commitments, or professional/legal/technical advice beyond the facts above. Never make up facts not listed above.
 
-Respond ONLY with a single JSON object and nothing else. Do not write any greeting, explanation, or conversational text before or after it. Do not use markdown fences. Your entire response must be exactly this shape and nothing more:
-{"reply": "your chat message to the visitor", "urgent": true or false, "showLeadForm": true or false}`;
+${OUTPUT_CONTRACT_BASIC}`;
+}
+
+// Only these four fields, only strings, length-capped. The model is told never
+// to put an SSN or a policy number in here, but "told never to" is not a
+// guarantee - so redactSensitive runs over it too before it goes anywhere.
+function sanitizeLead(raw) {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const out = {};
+  let any = false;
+  for (const key of ['name', 'phone', 'email', 'reason']) {
+    const value = raw[key];
+    if (typeof value === 'string' && value.trim()) {
+      out[key] = redactSensitive(value.trim()).slice(0, 300);
+      any = true;
+    }
+  }
+  return any ? out : undefined;
 }
 
 app.post('/api/chat', async (req, res) => {
@@ -159,6 +256,10 @@ app.post('/api/chat', async (req, res) => {
       reply: parsed.reply || "Sorry, could you rephrase that?",
       urgent: Boolean(parsed.urgent),
       showLeadForm: Boolean(parsed.showLeadForm),
+      // Present only for agencies capturing conversationally. Agencies on the
+      // default prompt never emit it, so this stays undefined and the widget
+      // keeps using the form exactly as before.
+      lead: sanitizeLead(parsed.lead),
     });
   } catch (err) {
     console.error('Chat error:', err);

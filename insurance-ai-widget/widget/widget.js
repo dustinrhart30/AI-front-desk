@@ -29,6 +29,7 @@
     history: [], // {role, content}
     showLeadForm: false,
     config: null,
+    leadSubmitted: false,
     // Sticky once set. If the visitor opens with "I just got rear-ended" and
     // only hands over their number three turns later, the lead is still
     // urgent - so this latches true and never clears for the session.
@@ -162,7 +163,9 @@
     return '';
   }
 
-  function submitLead(name, phone, email) {
+  function postLead(name, phone, email, reason) {
+    if (state.leadSubmitted) return;
+    state.leadSubmitted = true;
     fetch(apiBase + '/api/lead', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -172,14 +175,34 @@
         phone: phone,
         email: email || '',
         urgent: state.urgent,
-        notes: reasonForContact(),
+        notes: reason || reasonForContact(),
         // Capped to match the server's own limit. The server rejects bodies
-        // over 100kb and submitLead swallows errors, so an unbounded history
+        // over 100kb and postLead swallows errors, so an unbounded history
         // would mean a long conversation silently loses the whole lead.
         transcript: state.history.slice(-60),
       }),
     }).catch(function () {});
-    addMessage('bot', "Thanks, " + name + "! Someone will call you at " + phone + " soon.");
+  }
+
+  // Form path: the agency is on the default prompt and the model asked for a
+  // form. Unchanged behaviour, including the confirmation line.
+  function submitLead(name, phone, email) {
+    var alreadySent = state.leadSubmitted;
+    postLead(name, phone, email, null);
+    if (!alreadySent) {
+      addMessage('bot', "Thanks, " + name + "! Someone will call you at " + phone + " soon.");
+    }
+  }
+
+  // Conversational path: the agency has a prompt override and the model is
+  // collecting details in the conversation itself. It sends back everything it
+  // has each turn; we send the lead the moment a name and a number are both
+  // there. No confirmation line - the assistant's own reply already said it,
+  // and a canned line on top reads like a robot talking over itself.
+  function maybeSubmitConversationalLead(lead) {
+    if (!lead || state.leadSubmitted) return;
+    if (!lead.name || !lead.phone) return;
+    postLead(lead.name, lead.phone, lead.email, lead.reason);
   }
 
   // ---------- Networking ----------
@@ -221,6 +244,7 @@
           addMessage('bot', 'Please call us right now at ' + state.config.phone + '.');
         }
         if (data.showLeadForm) renderLeadForm();
+        maybeSubmitConversationalLead(data.lead);
       })
       .catch(function () {
         hideTyping();
