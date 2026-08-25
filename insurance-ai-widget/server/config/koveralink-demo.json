@@ -9,7 +9,8 @@
   "timezone": "America/New_York",
 
   "phone": "(724) 555-0134",
-  "notifyEmail": "leads@koveralink.com",
+  "notifyEmail": "dustinrhart30@gmail.com",
+  "_notifyEmailNote": "TEMPORARY, 8/25/2026. Was leads@koveralink.com. Microsoft 365 rejects mail sent as Leads@leads.koveralink.com via Resend, because that subdomain's SPF/DKIM authorize Amazon SES (used by the prospect-alert system) and not Resend. Rejected at the SMTP edge, so it never reached the mailbox at all - not even Junk. Point this back to leads@koveralink.com once leads.koveralink.com is verified in Resend AND its SPF include is MERGED into the existing record, not replaced: v=spf1 include:amazonses.com include:_spf.resend.com ~all. Replacing it would break the working SES prospect alerts.",
   "address": "Greensburg, PA",
   "serviceArea": "Greensburg, PA and the surrounding Westmoreland County area — Latrobe, Jeannette, Irwin, Mount Pleasant and New Stanton, licensed in Pennsylvania only",
   "hours": "Monday-Friday 9am-5pm ET, Saturday 9am-12pm ET, closed Sunday",
