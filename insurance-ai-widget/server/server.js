@@ -209,7 +209,12 @@ app.post('/api/chat', async (req, res) => {
       },
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 300,
+        // 300 was sized for {reply, urgent, showLeadForm}. Agencies capturing
+        // conversationally also return a lead object, and if the response is
+        // cut mid-JSON the parse fails and the visitor gets the fallback text
+        // instead of the actual reply. This is a ceiling, not a target - short
+        // replies still cost what they cost.
+        max_tokens: 600,
         system: buildSystemPrompt(config),
         messages,
       }),
