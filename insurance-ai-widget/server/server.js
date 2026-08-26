@@ -23,6 +23,78 @@ app.use(
   })
 );
 
+// --- Abuse and cost control ------------------------------------------------
+// Neither POST endpoint had any limit: no auth, no rate limit, no captcha.
+// CORS is not protection - it is a browser convention and curl ignores it
+// entirely. Anyone who reads the widget source has the endpoint and a valid
+// agency id, and every /api/chat call spends money at Anthropic.
+//
+// In-memory counters are enough here because this runs as a single instance.
+// They reset on restart, which is acceptable for a backstop: the point is to
+// stop a script, not to bill accurately.
+
+// Render terminates TLS upstream. Without this every request appears to come
+// from the proxy, so the per-IP limiter would throttle all visitors as one
+// shared bucket - one abuser would lock out every real customer.
+app.set('trust proxy', 1);
+
+const MAX_MESSAGE_CHARS = Number(process.env.MAX_MESSAGE_CHARS || 2000);
+const MAX_HISTORY_TURNS = 10;
+
+function clientIp(req) {
+  const fwd = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  return fwd || req.ip || 'unknown';
+}
+
+function createLimiter({ windowMs, max, name }) {
+  const hits = new Map();
+  const sweep = setInterval(() => {
+    const now = Date.now();
+    for (const [k, v] of hits) if (v.resetAt <= now) hits.delete(k);
+  }, Math.min(windowMs, 10 * 60 * 1000));
+  if (sweep.unref) sweep.unref();
+
+  return function check(key) {
+    const now = Date.now();
+    let rec = hits.get(key);
+    if (!rec || rec.resetAt <= now) {
+      rec = { count: 0, resetAt: now + windowMs };
+      hits.set(key, rec);
+    }
+    rec.count += 1;
+    if (rec.count > max) {
+      console.warn(`Rate limit [${name}] key=${key} count=${rec.count} max=${max}`);
+      return { ok: false, retryAfter: Math.max(1, Math.ceil((rec.resetAt - now) / 1000)) };
+    }
+    return { ok: true, retryAfter: 0 };
+  };
+}
+
+// Per visitor: a real conversation is a handful of turns. 30 in 10 minutes is
+// generous for a person and useless for a script.
+const chatIpLimiter = createLimiter({
+  windowMs: 10 * 60 * 1000,
+  max: Number(process.env.CHAT_IP_MAX || 30),
+  name: 'chat/ip',
+});
+
+// Per agency per day: the hard stop on the Anthropic bill. Set well above real
+// traffic - it exists so a distributed script cannot run the balance to zero
+// overnight, which has already happened once.
+const chatDayLimiter = createLimiter({
+  windowMs: 24 * 60 * 60 * 1000,
+  max: Number(process.env.CHAT_AGENCY_DAILY_MAX || 750),
+  name: 'chat/agency-day',
+});
+
+// Leads are rare by nature. More than a few an hour from one address is abuse,
+// and the cost of it lands in a paying client's inbox.
+const leadIpLimiter = createLimiter({
+  windowMs: 60 * 60 * 1000,
+  max: Number(process.env.LEAD_IP_MAX || 5),
+  name: 'lead/ip',
+});
+
 // --- Serve the embeddable widget files ---
 app.use('/widget', express.static(path.join(__dirname, '..', 'widget')));
 
@@ -200,13 +272,41 @@ app.post('/api/chat', async (req, res) => {
       return res.status(400).json({ error: 'Missing message' });
     }
 
-    const priorTurns = Array.isArray(history) ? history.slice(-10) : [];
+    // Both limits return a `reply` as well as the 429, because the widget
+    // renders data.reply on any JSON response - so the visitor sees a sentence
+    // rather than an empty bubble.
+    const ipCheck = chatIpLimiter(`${agencyId}:${clientIp(req)}`);
+    if (!ipCheck.ok) {
+      res.set('Retry-After', String(ipCheck.retryAfter));
+      return res.status(429).json({
+        reply: `That's a lot of messages in a short time. Give it a minute and try again — or call us at ${config.phone} and we'll pick up where you left off.`,
+        urgent: false, showLeadForm: false,
+      });
+    }
+
+    const dayCheck = chatDayLimiter(`day:${agencyId}`);
+    if (!dayCheck.ok) {
+      res.set('Retry-After', String(dayCheck.retryAfter));
+      return res.status(429).json({
+        reply: `The assistant is unavailable right now. Please call us at ${config.phone} — someone can help you directly.`,
+        urgent: false, showLeadForm: false,
+      });
+    }
+
+    // A 100kb body is still a very large prompt to pay for. Real questions are
+    // short; anything longer is either a paste accident or someone probing.
+    const trimmedMessage = message.slice(0, MAX_MESSAGE_CHARS);
+
+    const priorTurns = (Array.isArray(history) ? history : [])
+      .slice(-MAX_HISTORY_TURNS)
+      .filter((t) => t && typeof t.content === 'string')
+      .map((t) => ({ ...t, content: t.content.slice(0, MAX_MESSAGE_CHARS) }));
     const messages = [
       ...priorTurns.map((turn) => ({
         role: turn.role === 'assistant' ? 'assistant' : 'user',
         content: turn.content,
       })),
-      { role: 'user', content: message },
+      { role: 'user', content: trimmedMessage },
     ];
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -382,6 +482,13 @@ app.post('/api/lead', async (req, res) => {
     if (!config) return res.status(404).json({ error: 'Unknown agency' });
     if (!name || !phone) {
       return res.status(400).json({ error: 'Name and phone are required' });
+    }
+
+    // Unthrottled, this endpoint mails a paying client's inbox on demand.
+    const leadCheck = leadIpLimiter(clientIp(req));
+    if (!leadCheck.ok) {
+      res.set('Retry-After', String(leadCheck.retryAfter));
+      return res.status(429).json({ ok: false, error: 'Too many submissions' });
     }
 
     const lead = {
