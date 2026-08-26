@@ -4,17 +4,16 @@
   "industry": "a fictional sample insurance agency used to demonstrate KoveraLink's AI Front Desk product",
   "greeting": "Hi! I'm the virtual assistant for KoveraLink Insurance — a demo agency showing off KoveraLink's AI Front Desk. Ask me about coverage we write, our service area, or our hours, and I'll answer just like the real thing.",
   "tagline": "AI Front Desk — live demonstration",
-
   "systemPromptFile": "koveralink-demo.prompt.md",
   "timezone": "America/New_York",
-
   "phone": "(724) 555-0134",
   "notifyEmail": "leads@koveralink.com",
-  "_notifyEmailNote": "8/25/2026. Sending identity is PROVEN GOOD: a lead email from Leads@leads.koveralink.com landed in Gmail's inbox at 19:46Z with dkim=pass (selector resend, d=leads.koveralink.com), a second dkim=pass from amazonses.com, spf=pass via send.leads.koveralink.com, and dmarc=pass. DNS is complete and correct: DKIM at resend._domainkey.leads.koveralink.com, SPF and bounce MX at send.leads.koveralink.com. Earlier sends to this address failed, but all of them predate the Resend domain verification being in place - which is the difference, not the recipient. Restored to the real address to test that.",
+  "_notifyEmailNote": "VERIFIED 8/25/2026 23:53Z. Delivery to this address confirmed by reading the message in the mailbox: all seven spec fields present, URGENT subject firing, full transcript attached. Earlier failures were caused solely by the Resend sending domain (leads.koveralink.com) not being verified yet - not DNS, not Proofpoint, not the from-address. DKIM/SPF/DMARC all pass.",
+  "consentNote": "By leaving your name and number you agree that someone from the office may call or text you about it.",
+  "_consentNoteNote": "Shown permanently in the widget footer, above the input, so it is on screen when a visitor types their number. The exact text is recorded on every lead and printed in the notification email, which is what gives the agency a record of what the visitor was shown. Wording is the agency's to choose - this default is deliberately plain and makes no legal claim.",
   "address": "Greensburg, PA",
   "serviceArea": "Greensburg, PA and the surrounding Westmoreland County area — Latrobe, Jeannette, Irwin, Mount Pleasant and New Stanton, licensed in Pennsylvania only",
   "hours": "Monday-Friday 9am-5pm ET, Saturday 9am-12pm ET, closed Sunday",
-
   "services": [
     "Auto insurance",
     "Homeowners insurance",
@@ -28,7 +27,6 @@
     "Workers' compensation",
     "Commercial property"
   ],
-
   "notOffered": [
     "Health insurance",
     "Medicare and Medicare supplement",
@@ -36,7 +34,6 @@
     "Pet insurance",
     "Surety and performance bonds"
   ],
-
   "carriers": [
     "Allegheny Mutual Insurance Company",
     "Keystone Valley Casualty",
@@ -44,13 +41,9 @@
     "Three Rivers Specialty (commercial only)",
     "Monongahela Life Assurance (life only)"
   ],
-
   "tone": "Warm, plain, local. Talk the way someone at the front desk of a small-town agency talks — helpful and unhurried, never salesy and never chirpy. Contractions are good. Exclamation points, rarely.",
-
   "urgentDescription": "an accident or collision that just happened, property damage in progress (fire, water, or a break-in), anyone injured, a vehicle towed or impounded, needing proof of insurance today, a cancellation or non-renewal notice just received, or a policy lapsing within 48 hours",
-
   "primaryColor": "#14283D",
   "accentColor": "#2F8F87",
-
   "_note": "All carrier names are fictional on purpose — see AGENCY_PROFILE.md. This agency does not exist and sells nothing. Keys marked below are read by name from the prompt file via {{placeholders}}: businessName, phone, address, serviceArea, hours, services, notOffered, carriers, tone, urgentDescription, plus {{now}} which the server computes from timezone."
 }
