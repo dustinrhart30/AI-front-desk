@@ -132,6 +132,10 @@ app.get('/api/agency-config', (req, res) => {
     phone: config.phone,
     primaryColor: config.primaryColor,
     accentColor: config.accentColor,
+    // Shown in the widget footer, permanently visible above the input, so it
+    // is on screen at the moment a visitor types their number rather than
+    // buried in a policy nobody opens.
+    consentNote: config.consentNote || '',
   });
 });
 
@@ -332,8 +336,10 @@ app.post('/api/chat', async (req, res) => {
     if (!response.ok) {
       const errText = await response.text();
       console.error('Anthropic API error:', response.status, errText);
+      noteChatResult(false, `${response.status} ${errText}`);
       return res.status(502).json({ error: 'Chat service unavailable' });
     }
+    noteChatResult(true);
 
     const data = await response.json();
     const textBlock = (data.content || []).find((b) => b.type === 'text');
@@ -366,6 +372,16 @@ app.post('/api/chat', async (req, res) => {
       }
     }
 
+    // firstMessage is only stored on the opening turn, so the report shows
+    // what people came in asking rather than every line they typed. Redacted
+    // with the same filter as transcripts.
+    recordEvent(agencyId, {
+      type: 'chat',
+      sessionId: typeof req.body.sessionId === 'string' ? req.body.sessionId.slice(0, 64) : null,
+      ref: sanitizeRef(req.body.ref),
+      firstMessage: priorTurns.length === 0 ? redactSensitive(trimmedMessage).slice(0, 200) : undefined,
+    });
+
     res.json({
       reply: parsed.reply || "Sorry, could you rephrase that?",
       urgent: Boolean(parsed.urgent),
@@ -382,8 +398,22 @@ app.post('/api/chat', async (req, res) => {
 });
 
 // --- Lead capture endpoint ---
-const LEADS_DIR = path.join(__dirname, 'leads');
-if (!fs.existsSync(LEADS_DIR)) fs.mkdirSync(LEADS_DIR);
+// The local copy is a convenience, NOT a safety net. Render's filesystem is
+// ephemeral unless a disk is mounted, so anything written here is erased on
+// every deploy and restart. Point LEADS_DIR at a mounted disk to make it
+// durable; until then, the email IS the record, which is why a failed send is
+// now reported honestly instead of being swallowed.
+const LEADS_DIR = process.env.LEADS_DIR || path.join(__dirname, 'leads');
+try {
+  if (!fs.existsSync(LEADS_DIR)) fs.mkdirSync(LEADS_DIR, { recursive: true });
+} catch (err) {
+  console.warn(`Cannot create ${LEADS_DIR} (${err.message}) - leads will not be written to disk.`);
+}
+
+// A second copy to an address you control, independent of the client's mailbox
+// and its mail filtering. Costs nothing and means a lead is never one spam
+// rule away from disappearing.
+const ARCHIVE_EMAIL = process.env.ARCHIVE_EMAIL || '';
 
 // Email is sent via Resend's HTTP API, not SMTP. Render's free tier (and many
 // other hosts) blocks outbound SMTP ports entirely, which is invisible until
@@ -419,6 +449,17 @@ function redactSensitive(text) {
     .replace(/\b\d(?:[ -]?\d){12,18}\b/g, '[redacted]');
 }
 
+// Campaign tag from a ?a=<slug> demo link. The widget already filters this,
+// but the widget runs on someone else's machine, so the filter that counts is
+// this one: anything that reaches an event file can be rendered in a report,
+// and a request can be made with curl. Returns undefined rather than an empty
+// string so JSON.stringify drops the key for untagged traffic.
+function sanitizeRef(value) {
+  if (typeof value !== 'string') return undefined;
+  const clean = value.toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 32);
+  return clean || undefined;
+}
+
 function normalizeTranscript(raw) {
   if (!Array.isArray(raw)) return [];
   return raw
@@ -451,6 +492,7 @@ async function sendLeadEmail(config, lead) {
     body: JSON.stringify({
       from: `${EMAIL_FROM_NAME} <${EMAIL_FROM}>`,
       to: config.notifyEmail,
+      ...(ARCHIVE_EMAIL ? { bcc: ARCHIVE_EMAIL } : {}),
       subject,
       text: [
         `New lead from the ${config.businessName} website chat assistant.`,
@@ -461,6 +503,14 @@ async function sendLeadEmail(config, lead) {
         `Reason for contact: ${lead.notes || '(not given)'}`,
         `Urgent: ${lead.urgent ? 'YES' : 'No'}`,
         `Time: ${lead.timestamp}`,
+        ...(lead.ref ? [`Came from: ${lead.ref}`] : []),
+        ...(lead.consentNote
+          ? [
+              ``,
+              `Notice shown to this visitor${lead.consentShown ? '' : ' (widget did not confirm display)'}:`,
+              `  "${lead.consentNote}"`,
+            ]
+          : []),
         ``,
         `--- Full transcript ---`,
         ``,
@@ -473,6 +523,14 @@ async function sendLeadEmail(config, lead) {
     const errText = await response.text();
     throw new Error(`Resend API error: ${response.status} ${errText}`);
   }
+
+  // A 200 here means Resend ACCEPTED the message, not that anyone received it.
+  // Delivery happens afterwards and can still bounce - a mailbox that does not
+  // exist, an unverified sending domain, a receiving server that rejects it.
+  // Return the id so the log line can point at the Resend dashboard entry,
+  // which is the only place the real delivery status lives.
+  const body = await response.json().catch(() => ({}));
+  return body.id || null;
 }
 
 app.post('/api/lead', async (req, res) => {
@@ -499,28 +557,297 @@ app.post('/api/lead', async (req, res) => {
       notes: redactSensitive(notes || ''),
       urgent: Boolean(urgent),
       transcript: normalizeTranscript(transcript),
+      // The evidentiary half. The text comes from the agency's config rather
+      // than from the request, so a client cannot be handed a record of a
+      // notice the server never served. consentShown is the widget confirming
+      // it actually rendered - it is a client-side claim, so it is reported as
+      // one rather than presented as proof.
+      consentNote: config.consentNote || '',
+      consentShown: req.body.consentShown === true,
+      // Which outreach brought them, when the demo link was tagged. Only ever
+      // set on the sales demo - a real agency's visitors arrive untagged and
+      // this stays undefined, so nothing changes in their notification.
+      ref: sanitizeRef(req.body.ref),
     };
 
-    // Always save locally first, so nothing is lost even if email fails
-    const leadFile = path.join(LEADS_DIR, `${agencyId}.jsonl`);
-    fs.appendFileSync(leadFile, JSON.stringify(lead) + '\n');
+    // Best-effort local copy. See the LEADS_DIR note above: on an unmounted
+    // Render filesystem this does not survive a restart, so it is not a reason
+    // to treat a failed email as harmless.
+    let savedToDisk = false;
+    try {
+      fs.appendFileSync(path.join(LEADS_DIR, `${agencyId}.jsonl`), JSON.stringify(lead) + '\n');
+      savedToDisk = true;
+    } catch (err) {
+      console.error(`Could not write lead to disk for ${agencyId}: ${err.message}`);
+    }
 
+    let emailed = false;
     if (RESEND_API_KEY && EMAIL_FROM && config.notifyEmail) {
-      await sendLeadEmail(config, lead);
-      console.log(`Lead email sent to ${config.notifyEmail} for ${agencyId}`);
+      // One retry. Most Resend failures are transient; a second attempt costs
+      // a second and turns a lost lead into a delivered one.
+      for (let attempt = 1; attempt <= 2 && !emailed; attempt++) {
+        try {
+          const messageId = await sendLeadEmail(config, lead);
+          emailed = true;
+          console.log(
+            `Lead email ACCEPTED BY RESEND for ${agencyId} -> ${config.notifyEmail} ` +
+            `(id: ${messageId || 'unknown'}, attempt ${attempt}). This is NOT proof of ` +
+            `delivery - check the Resend dashboard for this id to see whether it was ` +
+            `delivered or bounced.`
+          );
+        } catch (err) {
+          console.error(`Lead email attempt ${attempt} failed for ${agencyId}: ${err.message}`);
+          if (attempt === 1) await new Promise((r) => setTimeout(r, 1000));
+        }
+      }
     } else {
       console.log(`Lead email SKIPPED for ${agencyId} - email configured: ${Boolean(RESEND_API_KEY && EMAIL_FROM)}, notifyEmail set: ${Boolean(config.notifyEmail)}`);
     }
 
+    if (!emailed) {
+      // Do not tell the visitor someone will call them back when nothing left
+      // the building. The widget uses this to hand them the phone number
+      // instead, which turns a silently lost lead into a phone call.
+      console.error(
+        `LEAD NOT DELIVERED for ${agencyId}: ${lead.name} / ${lead.phone} ` +
+        `(saved to disk: ${savedToDisk}). Recover it from the log line above.`
+      );
+      return res.json({ ok: false, emailFailed: true, phone: config.phone || '' });
+    }
+
+    recordEvent(agencyId, {
+      type: 'lead',
+      sessionId: typeof req.body.sessionId === 'string' ? req.body.sessionId.slice(0, 64) : null,
+      ref: sanitizeRef(req.body.ref),
+      urgent: Boolean(urgent),
+    });
+
     res.json({ ok: true });
   } catch (err) {
     console.error('Lead capture error:', err);
-    // Lead was already saved to disk above even if email failed, so don't fail the request
-    res.json({ ok: true, emailWarning: true });
+    res.json({ ok: false, emailFailed: true });
   }
 });
 
-app.get('/health', (req, res) => res.json({ status: 'ok' }));
+// --- Usage reporting -------------------------------------------------------
+// At $200/mo the first renewal question is "what did this actually do for me",
+// and until now the only answer was forwarded emails.
+//
+// Same durability caveat as leads: this is an append-only file, and Render
+// wipes the filesystem on deploy unless a disk is mounted. Point STATS_DIR at
+// one to keep history across deploys. Losing stats is an annoyance rather than
+// a lost customer, which is why it is acceptable here and was not for leads.
+
+const STATS_DIR = process.env.STATS_DIR || LEADS_DIR;
+
+function recordEvent(agencyId, event) {
+  if (!/^[a-z0-9-]+$/i.test(agencyId || '')) return;
+  try {
+    fs.appendFileSync(
+      path.join(STATS_DIR, `${agencyId}.events.jsonl`),
+      JSON.stringify({ t: new Date().toISOString(), ...event }) + '\n'
+    );
+  } catch (err) {
+    // Reporting must never break the thing being reported on.
+    console.warn(`Could not record ${event.type} event for ${agencyId}: ${err.message}`);
+  }
+}
+
+function readEvents(agencyId, sinceMs) {
+  const file = path.join(STATS_DIR, `${agencyId}.events.jsonl`);
+  let raw;
+  try {
+    raw = fs.readFileSync(file, 'utf8');
+  } catch (err) {
+    return [];
+  }
+  const out = [];
+  for (const line of raw.split('\n')) {
+    if (!line.trim()) continue;
+    try {
+      const ev = JSON.parse(line);
+      if (Date.parse(ev.t) >= sinceMs) out.push(ev);
+    } catch (e) { /* skip a torn line rather than fail the whole report */ }
+  }
+  return out;
+}
+
+function summarise(events) {
+  const sessions = new Set();
+  const leadSessions = new Set();
+  const urgentSessions = new Set();
+  const byDay = {};
+  const questions = [];
+  let messages = 0;
+
+  // Outreach attribution. Empty for every real agency - only a tagged demo
+  // link produces a ref - so the report renders this section or not depending
+  // on whether there is anything in it.
+  const byRef = {};
+  const refSessions = new Set();
+  const refLeadSessions = new Set();
+  function noteRef(ref, day) {
+    if (!byRef[ref]) byRef[ref] = { conversations: 0, leads: 0, first: day, last: day };
+    if (day < byRef[ref].first) byRef[ref].first = day;
+    if (day > byRef[ref].last) byRef[ref].last = day;
+    return byRef[ref];
+  }
+
+  // A lead is counted once per conversation, the same way a conversation is
+  // counted once per session. Counting raw events instead would let one visitor
+  // submitting twice inflate a number a paying client reads as new business.
+  // Events without a sessionId (older records) fall back to their timestamp.
+  for (let i = 0; i < events.length; i++) {
+    const ev = events[i];
+    const day = String(ev.t).slice(0, 10);
+    byDay[day] = byDay[day] || { conversations: 0, leads: 0 };
+    const key = ev.sessionId || `${ev.t}#${i}`;
+
+    if (ev.type === 'chat') {
+      messages += 1;
+      if (!sessions.has(key)) {
+        sessions.add(key);
+        byDay[day].conversations += 1;
+      }
+      if (ev.ref && !refSessions.has(ev.ref + '|' + key)) {
+        refSessions.add(ev.ref + '|' + key);
+        noteRef(ev.ref, day).conversations += 1;
+      }
+      if (ev.firstMessage) questions.push({ t: ev.t, text: ev.firstMessage, ref: ev.ref });
+    } else if (ev.type === 'lead') {
+      if (!leadSessions.has(key)) {
+        leadSessions.add(key);
+        byDay[day].leads += 1;
+      }
+      if (ev.ref && !refLeadSessions.has(ev.ref + '|' + key)) {
+        refLeadSessions.add(ev.ref + '|' + key);
+        noteRef(ev.ref, day).leads += 1;
+      }
+      if (ev.urgent) urgentSessions.add(key);
+    }
+  }
+
+  const conversations = sessions.size;
+  const leads = leadSessions.size;
+  const urgentLeads = urgentSessions.size;
+  return {
+    conversations,
+    messages,
+    leads,
+    urgentLeads,
+    // What proportion of conversations produced someone the agency can call.
+    // The number an agency owner actually cares about.
+    leadRate: conversations ? Math.round((leads / conversations) * 100) : 0,
+    byDay,
+    byRef,
+    recentQuestions: questions.slice(-40).reverse(),
+  };
+}
+
+// Token-gated, and opt-in: an agency without reportToken in its config has no
+// reporting endpoint at all, so this cannot leak a config that never asked for
+// it. The token goes in the query string, which means it can appear in server
+// logs and referrer headers - fine for usage counts, not for anything else.
+app.get('/api/stats', (req, res) => {
+  const { agencyId, token } = req.query;
+  const config = loadAgencyConfig(agencyId);
+  if (!config || !config.reportToken) return res.status(404).json({ error: 'Not found' });
+  if (token !== config.reportToken) return res.status(403).json({ error: 'Forbidden' });
+
+  const days = Math.min(Math.max(parseInt(req.query.days, 10) || 30, 1), 365);
+  const since = Date.now() - days * 24 * 60 * 60 * 1000;
+
+  res.json({
+    agency: config.businessName,
+    days,
+    generatedAt: new Date().toISOString(),
+    ...summarise(readEvents(agencyId, since)),
+  });
+});
+
+app.get('/report', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'report', 'report.html'));
+});
+
+// --- Health ----------------------------------------------------------------
+// The old /health returned {"status":"ok"} unconditionally. It said ok for the
+// entire period the Anthropic balance was empty and every single chat was
+// failing, which is worse than having no health check at all - it actively
+// reassured while the product was down.
+//
+// The signal now comes from real traffic: every /api/chat call records whether
+// Anthropic actually answered. If nothing has exercised the chat path recently,
+// /health does one minimal probe itself, at most once every PROBE_MIN_GAP_MS,
+// so an external monitor polling every few minutes costs almost nothing.
+
+const chatHealth = { ok: null, at: null, error: null };
+const PROBE_MIN_GAP_MS = 30 * 60 * 1000;
+const STALE_MS = 30 * 60 * 1000;
+let lastProbeAt = 0;
+
+function noteChatResult(ok, error) {
+  chatHealth.ok = ok;
+  chatHealth.at = new Date().toISOString();
+  chatHealth.error = ok ? null : String(error || '').slice(0, 200);
+}
+
+async function probeChat() {
+  lastProbeAt = Date.now();
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1,
+        messages: [{ role: 'user', content: 'ping' }],
+      }),
+    });
+    if (!r.ok) {
+      const body = await r.text();
+      noteChatResult(false, `${r.status} ${body}`);
+    } else {
+      noteChatResult(true);
+    }
+  } catch (err) {
+    noteChatResult(false, err.message);
+  }
+}
+
+app.get('/health', async (req, res) => {
+  const checks = {
+    configsLoadable: false,
+    anthropicKeySet: Boolean(process.env.ANTHROPIC_API_KEY),
+    emailConfigured: Boolean(RESEND_API_KEY && EMAIL_FROM),
+  };
+
+  try {
+    checks.configsLoadable = fs.readdirSync(CONFIG_DIR).some((f) => f.endsWith('.json'));
+  } catch (err) { /* stays false */ }
+
+  const stale = !chatHealth.at || Date.now() - Date.parse(chatHealth.at) > STALE_MS;
+  if (stale && checks.anthropicKeySet && Date.now() - lastProbeAt > PROBE_MIN_GAP_MS) {
+    await probeChat();
+  }
+
+  // Email being unconfigured is a warning, not an outage - leads still save and
+  // the failure is now reported to the visitor. A dead chat path is an outage.
+  const healthy = checks.configsLoadable && checks.anthropicKeySet && chatHealth.ok !== false;
+
+  res.status(healthy ? 200 : 503).json({
+    status: healthy ? 'ok' : 'degraded',
+    checks,
+    chat: {
+      ok: chatHealth.ok,
+      lastCheckedAt: chatHealth.at,
+      error: chatHealth.error,
+    },
+  });
+});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`AI Front Desk server running on port ${PORT}`));
