@@ -641,6 +641,32 @@ app.post('/api/lead', async (req, res) => {
 
 const STATS_DIR = process.env.STATS_DIR || LEADS_DIR;
 
+// LEADS_DIR is created on startup; STATS_DIR was not, which only worked while
+// the two were the same directory. The moment STATS_DIR is pointed somewhere
+// of its own - a mounted disk, which is the whole reason it is configurable -
+// every appendFileSync below fails on a directory that does not exist. Those
+// failures are swallowed by design so reporting can never break chat, so the
+// symptom would have been a report that stayed empty forever with nothing but
+// a warning in a log nobody reads.
+try {
+  if (!fs.existsSync(STATS_DIR)) fs.mkdirSync(STATS_DIR, { recursive: true });
+} catch (err) {
+  console.warn(`Cannot create ${STATS_DIR} (${err.message}) - usage events will not be recorded.`);
+}
+
+// Actually write, rather than checking permission bits: a mounted disk that
+// is full or read-only passes every stat() and still loses the data.
+function canWrite(dir) {
+  const probe = path.join(dir, '.write-probe');
+  try {
+    fs.writeFileSync(probe, '');
+    fs.unlinkSync(probe);
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
 function recordEvent(agencyId, event) {
   if (!/^[a-z0-9-]+$/i.test(agencyId || '')) return;
   try {
@@ -852,6 +878,12 @@ app.get('/health', async (req, res) => {
     configsLoadable: false,
     anthropicKeySet: Boolean(process.env.ANTHROPIC_API_KEY),
     emailConfigured: Boolean(RESEND_API_KEY && EMAIL_FROM),
+    // Both are silent failures by design - a lead that cannot be written to
+    // disk still emails, and a stats write that fails never interrupts chat.
+    // Silent is right at the moment of failure and wrong forever after, so
+    // they are surfaced here where a monitor can see them.
+    leadsWritable: canWrite(LEADS_DIR),
+    statsWritable: canWrite(STATS_DIR),
   };
 
   try {
