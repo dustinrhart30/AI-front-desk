@@ -7,6 +7,7 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const app = express();
 app.use(express.json({ limit: '100kb' }));
@@ -744,15 +745,43 @@ function summarise(events) {
   };
 }
 
-// Token-gated, and opt-in: an agency without reportToken in its config has no
-// reporting endpoint at all, so this cannot leak a config that never asked for
-// it. The token goes in the query string, which means it can appear in server
-// logs and referrer headers - fine for usage counts, not for anything else.
+// Where a report token is allowed to live.
+//
+// NOT in the agency config file. Those are committed to a public repository,
+// and a token anyone can read is not a token - it would hand the world the
+// opening question of every conversation a client's customers ever had, plus
+// the campaign tags naming who we are prospecting. The environment is the
+// only correct home for it, so this reads REPORT_TOKEN_<AGENCY_ID>.
+//
+// config.reportToken is still honoured as a fallback so a developer can run
+// the report locally without setting environment variables. Never commit a
+// real one - if a token has ever been in a config file, treat it as public
+// and issue a new one.
+function reportTokenFor(agencyId, config) {
+  const envKey = 'REPORT_TOKEN_' + String(agencyId).toUpperCase().replace(/[^A-Z0-9]/g, '_');
+  return process.env[envKey] || (config && config.reportToken) || '';
+}
+
+// Constant-time compare. An ordinary !== leaks the length of the shared
+// prefix through timing, which is enough to walk a token out one character
+// at a time given patience.
+function tokenMatches(supplied, expected) {
+  const a = Buffer.from(String(supplied || ''), 'utf8');
+  const b = Buffer.from(String(expected || ''), 'utf8');
+  if (a.length !== b.length || a.length === 0) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
+// Token-gated, and opt-in: an agency with no token configured has no reporting
+// endpoint at all, so this cannot leak a config that never asked for it. The
+// token goes in the query string, which means it can appear in server logs and
+// referrer headers - fine for usage counts, not for anything else.
 app.get('/api/stats', (req, res) => {
   const { agencyId, token } = req.query;
   const config = loadAgencyConfig(agencyId);
-  if (!config || !config.reportToken) return res.status(404).json({ error: 'Not found' });
-  if (token !== config.reportToken) return res.status(403).json({ error: 'Forbidden' });
+  const expected = reportTokenFor(agencyId, config);
+  if (!config || !expected) return res.status(404).json({ error: 'Not found' });
+  if (!tokenMatches(token, expected)) return res.status(403).json({ error: 'Forbidden' });
 
   const days = Math.min(Math.max(parseInt(req.query.days, 10) || 30, 1), 365);
   const since = Date.now() - days * 24 * 60 * 60 * 1000;
